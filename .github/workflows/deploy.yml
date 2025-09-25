@@ -1,0 +1,50 @@
+name: Deploy Backend to EC2
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Checkout backend code
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      # 2. Setup Node.js
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      # 3. Deploy to EC2
+      - name: Deploy backend
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
+          BACKEND_PATH: ${{ secrets.BACKEND_PATH }}
+          NODE_ENV: ${{ secrets.NODE_ENV }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H $EC2_HOST >> ~/.ssh/known_hosts
+
+          ssh ${EC2_USER}@${EC2_HOST} << EOF
+            # Pull latest backend code
+            cd $BACKEND_PATH || git clone <BACKEND_REPO_URL> $BACKEND_PATH && cd $BACKEND_PATH
+            git reset --hard
+            git pull origin main
+
+            # Install dependencies
+            npm install
+
+            # Restart backend with PM2
+            pm2 stop backend || true
+            pm2 start server.js --name backend
+            pm2 save
+          EOF
